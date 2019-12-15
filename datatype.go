@@ -1,6 +1,6 @@
 package redis
 
-// DataType is a marker interface for Redis data types.
+// Data is a marker interface for Redis data types.
 // Following types implement this interface:
 //
 // - SimpleString
@@ -8,7 +8,7 @@ package redis
 // - Integer
 // - BulkString
 // - Array
-type DataType interface {
+type Data interface {
 	redisDataType()
 }
 
@@ -42,6 +42,6 @@ type BulkString []byte
 func (BulkString) redisDataType() {}
 
 // Array represents a collection of DataTypes.
-type Array []DataType
+type Array []Data
 
 func (Array) redisDataType() {}
