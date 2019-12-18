@@ -7,6 +7,7 @@ import (
 	"net"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	spool "github.com/morikuni/slice/pool"
@@ -17,7 +18,7 @@ type Pool struct {
 	pool    *spool.Pool
 	conf    *poolConfig
 	mu      sync.Mutex
-	numOpen int
+	numOpen int64
 	started bool
 }
 
@@ -25,9 +26,9 @@ type poolConfig struct {
 	addr        string
 	dialFunc    func(ctx context.Context, network, addr string) (net.Conn, error)
 	onError     func(context.Context, error)
-	maxOpen     int
-	maxIdle     int
-	minIdle     int
+	maxOpen     int64
+	maxIdle     int64
+	minIdle     int64
 	idleTimeout time.Duration
 }
 
@@ -38,8 +39,8 @@ func evaluatePoolOption(addr string, opts []PoolOption) (*poolConfig, error) {
 		addr:        addr,
 		dialFunc:    (&net.Dialer{}).DialContext,
 		maxOpen:     0, // no limit
-		maxIdle:     10 * runtime.NumCPU(),
-		minIdle:     runtime.NumCPU(),
+		maxIdle:     int64(10 * runtime.NumCPU()),
+		minIdle:     int64(runtime.NumCPU()),
 		idleTimeout: time.Minute,
 		onError: func(ctx context.Context, err error) {
 			fmt.Printf("RedisPoolError: %v\n", err)
@@ -77,7 +78,7 @@ func NewPool(addr string, opts ...PoolOption) (*Pool, error) {
 
 	idles := make([]Conn, conf.maxIdle)
 	pl, err := spool.New(len(idles),
-		spool.MinIdle(conf.minIdle),
+		spool.MinIdle(int(conf.minIdle)),
 		spool.IdleTimeout(conf.idleTimeout),
 	)
 	if err != nil {
@@ -105,16 +106,14 @@ func (p *Pool) Get(ctx context.Context) (Conn, error) {
 		return nil, errors.New("cannot open new conn due to max open limit")
 	}
 
-	p.numOpen++
+	p.addNumOpen(1)
 	p.mu.Unlock()
 
 	// unlock mutex because dial take time.
 
 	conn, err := p.dial(ctx)
 	if err != nil {
-		p.mu.Lock()
-		p.numOpen--
-		p.mu.Unlock()
+		p.addNumOpen(-1)
 		return nil, err
 	}
 
@@ -126,18 +125,26 @@ func (p *Pool) canOpenNewConn() bool {
 		return true
 	}
 
-	return p.numOpen < p.conf.maxOpen
+	return p.getNumOpen() < p.conf.maxOpen
 }
 
-func (p *Pool) put(ctx context.Context, conn Conn) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
+func (p *Pool) getNumOpen() int64 {
+	return atomic.LoadInt64(&p.numOpen)
+}
 
+func (p *Pool) addNumOpen(d int64) {
+	atomic.AddInt64(&p.numOpen, d)
+}
+
+func (p *Pool) Put(ctx context.Context, conn Conn) error {
+	p.mu.Lock()
 	idx, ok := p.pool.Put()
 	if ok {
 		p.idles[idx] = conn
+		p.mu.Unlock()
 		return nil
 	}
+	p.mu.Unlock()
 
 	return conn.Close(ctx)
 }
@@ -158,13 +165,13 @@ func (p *Pool) init(ctx context.Context) error {
 		return errors.New("pool has already started")
 	}
 
-	for i := p.numOpen; i < p.conf.minIdle; i++ {
+	for i := p.getNumOpen(); i < p.conf.minIdle; i++ {
 		conn, err := p.dial(ctx)
 		if err != nil {
 			return err
 		}
 
-		p.numOpen++
+		p.addNumOpen(1)
 		idx, ok := p.pool.Put()
 		if ok {
 			p.idles[idx] = conn
@@ -216,14 +223,19 @@ func (p *Pool) dial(ctx context.Context) (Conn, error) {
 }
 
 func newPoolConn(conn Conn, p *Pool) Conn {
-	return &poolConn{conn, p}
+	return &poolConn{conn, p, false}
 }
 
 type poolConn struct {
 	Conn
-	pool *Pool
+	pool   *Pool
+	closed bool
 }
 
 func (c *poolConn) Close(ctx context.Context) error {
-	return c.pool.put(ctx, c.Conn)
+	if !c.closed {
+		c.pool.addNumOpen(-1)
+	}
+
+	return nil
 }
