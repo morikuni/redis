@@ -39,6 +39,10 @@ func (Integer) redisDataType() {}
 // The maximum size of string is 512MB.
 type BulkString []byte
 
+func (bs BulkString) String() string {
+	return string(bs)
+}
+
 func (BulkString) redisDataType() {}
 
 // Array represents a collection of DataTypes.
