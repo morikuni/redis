@@ -39,30 +39,34 @@ func (c netConn) Close() error {
 	return nil
 }
 
-func TestConn_Send(t *testing.T) {
+func TestConn(t *testing.T) {
 	cases := map[string]struct {
 		data Data
+		text string
 
-		want    string
-		wantErr bool
+		wantErrSend    bool
+		wantErrReceive bool
 	}{
 		"simple string": {
 			data: SimpleString("Hello"),
+			text: "+Hello\r\n",
 
-			want:    "+Hello\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"error": {
 			data: Error("World"),
+			text: "-World\r\n",
 
-			want:    "-World\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"integer": {
 			data: Integer(-123),
+			text: ":-123\r\n",
 
-			want:    ":-123\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"bulk string": {
 			data: BulkString(`hello
@@ -70,23 +74,27 @@ func TestConn_Send(t *testing.T) {
 こんにちは
 `),
 
-			want: strings.Join([]string{
+			text: strings.Join([]string{
 				"$23",
 				"hello\n\nこんにちは\n",
 			}, "\r\n") + "\r\n",
-			wantErr: false,
+
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"bulk string empty": {
 			data: BulkString{},
+			text: "$0\r\n",
 
-			want:    "$0\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"bulk string nil": {
 			data: BulkString(nil),
+			text: "$-1\r\n",
 
-			want:    "$-1\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"array": {
 			data: Array{
@@ -101,8 +109,7 @@ func TestConn_Send(t *testing.T) {
 					SimpleString("Nested"),
 				},
 			},
-
-			want: strings.Join([]string{
+			text: strings.Join([]string{
 				"*5",
 				"+Hello",
 				"-World",
@@ -112,25 +119,30 @@ func TestConn_Send(t *testing.T) {
 				"*1",
 				"+Nested",
 			}, "\r\n") + "\r\n",
-			wantErr: false,
+
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"array nil": {
 			data: Array(nil),
+			text: "*-1\r\n",
 
-			want:    "*-1\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"array empty": {
 			data: Array{},
+			text: "*0\r\n",
 
-			want:    "*0\r\n",
-			wantErr: false,
+			wantErrSend:    false,
+			wantErrReceive: false,
 		},
 		"nil": {
 			data: nil,
+			text: "",
 
-			want:    "",
-			wantErr: true,
+			wantErrSend:    true,
+			wantErrReceive: true,
 		},
 	}
 
@@ -142,8 +154,19 @@ func TestConn_Send(t *testing.T) {
 			conn := newConn(netConn{buf})
 
 			err := conn.Send(context.Background(), tc.data)
-			assert.WantError(t, tc.wantErr, err)
-			assert.Equal(t, tc.want, buf.String())
+			assert.WantError(t, tc.wantErrSend, err)
+			if !tc.wantErrSend {
+				assert.Equal(t, tc.text, buf.String())
+			}
+
+			buf.Reset()
+			buf.WriteString(tc.text)
+
+			res, err := conn.Receive(context.Background())
+			assert.WantError(t, tc.wantErrReceive, err)
+			if !tc.wantErrReceive {
+				assert.Equal(t, tc.data, res)
+			}
 		})
 	}
 
