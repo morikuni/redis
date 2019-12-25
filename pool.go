@@ -34,6 +34,12 @@ type poolConfig struct {
 
 type PoolOption func(*poolConfig)
 
+func MaxIdle(n int) PoolOption {
+	return func(p *poolConfig) {
+		p.maxIdle = int64(n)
+	}
+}
+
 func evaluatePoolOption(addr string, opts []PoolOption) (*poolConfig, error) {
 	conf := &poolConfig{
 		addr:        addr,
