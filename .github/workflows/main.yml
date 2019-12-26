@@ -1,0 +1,67 @@
+name: CI
+on: [push]
+jobs:
+
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go-version: [ '1.11' ] # 1.11 for GAE. 1.x.x is tested in coverage job.
+    steps:
+    - uses: actions/checkout@v1
+
+    - uses: actions/setup-go@v1
+      with:
+        go-version: ${{ matrix.go-version }}
+
+    - run: make test
+
+  bemchmark:
+    name: Benchmark
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1
+
+      - run: make bench
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - uses: actions/setup-go@v1
+        with:
+          go-version: 1
+
+      - run: make coverage
+
+      - uses: codecov/codecov-action@v1
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          file: ./coverage.out
+          yml: ./.codecov.yml
+          fail_ci_if_error: true
+
+  reviewdog:
+    name: Reviewdog
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v1
+
+      - name: Lint
+        uses: docker://reviewdog/action-golangci-lint:v1
+        with:
+          github_token: ${{ secrets.github_token }}
+          reporter: github-check
+          golangci_lint_flags: |
+            --enable-all --exclude-use-default
+            -D lll
+            -D funlen
+            -D gochecknoglobals
+
