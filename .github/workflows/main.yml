@@ -20,6 +20,11 @@ jobs:
   bemchmark:
     name: Benchmark
     runs-on: ubuntu-latest
+    services:
+      redis:
+        image: redis
+        ports:
+        - 6379:6379
     steps:
       - uses: actions/checkout@v1
 

@@ -8,6 +8,4 @@ coverage:
 
 .PHONY: bench
 bench:
-	docker-compose up -d
 	REDIS_ADDR=localhost:6379 go test -v -bench . -benchmem -count 1 -benchtime 5s ./... || true
-	docker-compose down
