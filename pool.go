@@ -98,13 +98,22 @@ func NewPool(addr string, opts ...PoolOption) (*Pool, error) {
 	}, nil
 }
 
+func (p *Pool) getIdle(ctx context.Context) (Conn, bool) {
+	idx, ok := p.pool.Get()
+	if ok {
+		return p.idles[idx], true
+	}
+
+	return nil, false
+}
+
 func (p *Pool) Get(ctx context.Context) (Conn, error) {
 	p.mu.Lock()
 
-	idx, ok := p.pool.Get()
+	conn, ok := p.getIdle(ctx)
 	if ok {
 		p.mu.Unlock()
-		return p.idles[idx], nil
+		return conn, nil
 	}
 
 	if !p.canOpenNewConn() {
@@ -155,12 +164,22 @@ func (p *Pool) Put(ctx context.Context, conn Conn) error {
 	return conn.Close(ctx)
 }
 
-func (p *Pool) Close() error {
+func (p *Pool) Close(ctx context.Context) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 
-	// TODO: iterate pool and close
-	return nil
+	var err error
+	for {
+		conn, ok := p.getIdle(ctx)
+		if !ok {
+			break
+		}
+		if e := conn.Close(ctx); e != nil {
+			err = e
+		}
+	}
+
+	return err
 }
 
 func (p *Pool) init(ctx context.Context) error {
