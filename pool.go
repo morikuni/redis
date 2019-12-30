@@ -19,13 +19,13 @@ type Pool struct {
 	conf    *poolConfig
 	mu      sync.Mutex
 	numOpen int64
-	started bool
+	done    chan struct{}
 }
 
 type poolConfig struct {
 	addr        string
 	dialFunc    func(ctx context.Context, network, addr string) (net.Conn, error)
-	onError     func(context.Context, error)
+	onError     func(error)
 	maxOpen     int64
 	maxIdle     int64
 	minIdle     int64
@@ -48,7 +48,7 @@ func evaluatePoolOption(addr string, opts []PoolOption) (*poolConfig, error) {
 		maxIdle:     int64(10 * runtime.NumCPU()),
 		minIdle:     int64(runtime.NumCPU()),
 		idleTimeout: time.Minute,
-		onError: func(ctx context.Context, err error) {
+		onError: func(err error) {
 			fmt.Printf("RedisPoolError: %v\n", err)
 		},
 	}
@@ -91,11 +91,16 @@ func NewPool(addr string, opts ...PoolOption) (*Pool, error) {
 		return nil, err
 	}
 
-	return &Pool{
+	p := &Pool{
 		idles: idles,
 		pool:  pl,
 		conf:  conf,
-	}, nil
+		done:  make(chan struct{}),
+	}
+
+	go p.start()
+
+	return p, nil
 }
 
 func (p *Pool) getIdle(ctx context.Context) (Conn, bool) {
@@ -109,6 +114,13 @@ func (p *Pool) getIdle(ctx context.Context) (Conn, bool) {
 
 func (p *Pool) Get(ctx context.Context) (Conn, error) {
 	p.mu.Lock()
+
+	select {
+	case <-p.done:
+		p.mu.Unlock()
+		return nil, errors.New("closed")
+	default:
+	}
 
 	conn, ok := p.getIdle(ctx)
 	if ok {
@@ -153,6 +165,14 @@ func (p *Pool) addNumOpen(d int64) {
 
 func (p *Pool) Put(ctx context.Context, conn Conn) error {
 	p.mu.Lock()
+
+	select {
+	case <-p.done:
+		p.mu.Unlock()
+		return errors.New("closed")
+	default:
+	}
+
 	idx, ok := p.pool.Put()
 	if ok {
 		p.idles[idx] = conn
@@ -179,62 +199,37 @@ func (p *Pool) Close(ctx context.Context) error {
 		}
 	}
 
+	close(p.done)
+
 	return err
 }
 
-func (p *Pool) init(ctx context.Context) error {
-	p.mu.Lock()
-	defer p.mu.Unlock()
-
-	if p.started {
-		return errors.New("pool has already started")
-	}
-
-	for i := p.getNumOpen(); i < p.conf.minIdle; i++ {
-		conn, err := p.dial(ctx)
-		if err != nil {
-			return err
-		}
-
-		p.addNumOpen(1)
-		idx, ok := p.pool.Put()
-		if ok {
-			p.idles[idx] = conn
-		}
-	}
-
-	return nil
-}
-
-func (p *Pool) Start(ctx context.Context) error {
-	if err := p.init(ctx); err != nil {
-		return err
-	}
-
+func (p *Pool) start() {
 	for {
 		p.mu.Lock()
+
 		idx, ok, next := p.pool.CloseIdle()
 		if ok {
-			err := p.idles[idx].Close(ctx)
+			err := p.idles[idx].Close(context.Background())
 			p.mu.Unlock()
 			if err != nil {
-				p.onError(ctx, err)
+				p.onError(err)
 			}
 		} else {
 			p.mu.Unlock()
 		}
 
 		select {
-		case <-ctx.Done():
-			return ctx.Err()
+		case <-p.done:
+			return
 		case <-time.After(time.Until(next)):
 		}
 	}
 }
 
-func (p *Pool) onError(ctx context.Context, err error) {
+func (p *Pool) onError(err error) {
 	if p.conf.onError != nil {
-		p.conf.onError(ctx, err)
+		p.conf.onError(err)
 	}
 }
 

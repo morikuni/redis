@@ -9,3 +9,12 @@ coverage:
 .PHONY: bench
 bench:
 	REDIS_ADDR=localhost:6379 go test -v -bench . -benchmem -count 1 -benchtime 5s ./... || true
+
+
+.PHONY: start-redis
+start-redis:
+	docker-compose up -d
+
+.PHONY: stop-redis
+stop-redis:
+	docker-compose down
