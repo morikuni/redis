@@ -158,7 +158,7 @@ func (c *conn) Receive(ctx context.Context) (Data, error) {
 	if dl, ok := ctx.Deadline(); ok {
 		err := c.conn.SetReadDeadline(dl)
 		if err != nil {
-			return nil, err
+			return nil, newConnError(err, false)
 		}
 	}
 
@@ -253,10 +253,19 @@ func (c *conn) Close(context.Context) error {
 	return c.conn.Close()
 }
 
-func isTemporary(err error) bool {
-	to, ok := err.(interface{ Temporary() bool })
+func canReuse(err error) bool {
+	te, ok := err.(interface{ CanReuse() bool })
 	if ok {
-		return to.Temporary()
+		return te.CanReuse()
+	}
+
+	return false
+}
+
+func isTemporary(err error) bool {
+	te, ok := err.(interface{ Temporary() bool })
+	if ok {
+		return te.Temporary()
 	}
 
 	return false

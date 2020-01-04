@@ -18,65 +18,28 @@ func TestE2E(t *testing.T) {
 	pool, err := NewPool(addr)
 	require.WantError(t, false, err)
 
+	client := NewClient(pool)
+
 	ctx := context.Background()
-	conn, err := pool.Get(ctx)
-	require.WantError(t, false, err)
 
-	err = conn.Send(ctx, Array{
-		BulkString("SET"),
-		BulkString("aaa"),
-		BulkString("123"),
+	sres, err := client.Set(ctx, &SetRequest{
+		Key:   "aaa",
+		Value: "123",
 	})
 	require.WantError(t, false, err)
+	assert.Equal(t, "OK", sres.value)
 
-	res, err := conn.Receive(ctx)
-	require.WantError(t, false, err)
-	assert.Equal(t, SimpleString("OK"), res)
-
-	err = conn.Send(ctx, Array{
-		BulkString("INCR"),
-		BulkString("aaa"),
+	ires, err := client.Incr(ctx, &IncrRequest{
+		Key: "aaa",
 	})
 	require.WantError(t, false, err)
+	assert.Equal(t, int64(124), ires.value)
 
-	res, err = conn.Receive(ctx)
-	require.WantError(t, false, err)
-	assert.Equal(t, Integer(124), res)
-
-	err = conn.Send(ctx, Array{
-		BulkString("GET"),
-		BulkString("aaa"),
+	sres, err = client.Get(ctx, &GetRequest{
+		Key: "aaa",
 	})
 	require.WantError(t, false, err)
-
-	res, err = conn.Receive(ctx)
-	require.WantError(t, false, err)
-	assert.Equal(t, BulkString("124"), res)
-
-	err = conn.Send(ctx, Array{
-		BulkString("ERROR"),
-	})
-	require.WantError(t, false, err)
-
-	res, err = conn.Receive(ctx)
-	require.WantError(t, false, err)
-	assert.Equal(t, Error("ERR unknown command 'ERROR'"), res)
-
-	err = conn.Send(ctx, Array{
-		BulkString("MGET"),
-		BulkString("aaa"),
-		BulkString("bbb"),
-		BulkString("aaa"),
-	})
-	require.WantError(t, false, err)
-
-	res, err = conn.Receive(ctx)
-	require.WantError(t, false, err)
-	assert.Equal(t, Array{
-		BulkString("124"),
-		BulkString(nil),
-		BulkString("124"),
-	}, res)
+	assert.Equal(t, "124", sres.value)
 }
 
 func run(b *testing.B, pool *Pool, send, receive bool) {
