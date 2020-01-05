@@ -46,22 +46,20 @@ func (c *Client) Do(ctx context.Context, req Request, res Response) error {
 		return err
 	}
 
-	conn, err := c.pool.Get(ctx)
-	if err != nil {
-		return err
-	}
+	var rd Data
+	err = c.withConn(ctx, func(ctx context.Context, conn Conn) error {
+		err = conn.Send(ctx, sd)
+		if err != nil {
+			return err
+		}
 
-	err = conn.Send(ctx, sd)
-	if err != nil {
-		return putConn(ctx, err, conn, c.pool)
-	}
+		rd, err = conn.Receive(ctx)
+		if err != nil {
+			return err
+		}
 
-	rd, err := conn.Receive(ctx)
-	if err != nil {
-		return putConn(ctx, err, conn, c.pool)
-	}
-
-	err = c.pool.Put(ctx, conn)
+		return nil
+	})
 	if err != nil {
 		return err
 	}
@@ -72,6 +70,59 @@ func (c *Client) Do(ctx context.Context, req Request, res Response) error {
 	}
 
 	return nil
+}
+
+type Pipeline struct {
+	conn Conn
+}
+
+func (p *Pipeline) Send(ctx context.Context, req Request) error {
+	d, err := req.ToData()
+	if err != nil {
+		return err
+	}
+
+	return p.conn.Send(ctx, d)
+}
+
+func (p *Pipeline) Receive(ctx context.Context, res Response) error {
+	d, err := p.conn.Receive(ctx)
+	if err != nil {
+		return err
+	}
+
+	return res.FromData(d)
+}
+
+func (p *Pipeline) Do(ctx context.Context, req Request, res Response) error {
+	err := p.Send(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	return p.Receive(ctx, res)
+}
+
+func (c *Client) withConn(ctx context.Context, f func(ctx context.Context, conn Conn) error) (retError error) {
+	conn, err := c.pool.Get(ctx)
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		err := putConn(ctx, retError, conn, c.pool)
+		if retError == nil {
+			retError = err
+		}
+	}()
+
+	return f(ctx, conn)
+}
+
+func (c *Client) withPipeline(ctx context.Context, f func(ctx context.Context, p *Pipeline) error) error {
+	return c.withConn(ctx, func(ctx context.Context, conn Conn) error {
+		return f(ctx, &Pipeline{conn})
+	})
 }
 
 type GetRequest struct {
@@ -85,9 +136,13 @@ func (req *GetRequest) ToData() (Data, error) {
 	}, nil
 }
 
-func (c *Client) Get(ctx context.Context, req *GetRequest) (*StringResponse, error) {
+type Doer interface {
+	Do(ctx context.Context, req Request, res Response) error
+}
+
+func Get(ctx context.Context, do Doer, req *GetRequest) (*StringResponse, error) {
 	var res StringResponse
-	return &res, c.Do(ctx, req, &res)
+	return &res, do.Do(ctx, req, &res)
 }
 
 type SetRequest struct {
@@ -119,9 +174,9 @@ func (req *SetRequest) ToData() (Data, error) {
 	return d, nil
 }
 
-func (c *Client) Set(ctx context.Context, req *SetRequest) (*StringResponse, error) {
+func Set(ctx context.Context, do Doer, req *SetRequest) (*StringResponse, error) {
 	var res StringResponse
-	return &res, c.Do(ctx, req, &res)
+	return &res, do.Do(ctx, req, &res)
 }
 
 type IncrRequest struct {
@@ -135,7 +190,7 @@ func (req *IncrRequest) ToData() (Data, error) {
 	}, nil
 }
 
-func (c *Client) Incr(ctx context.Context, req *IncrRequest) (*IntegerResponse, error) {
+func Incr(ctx context.Context, do Doer, req *IncrRequest) (*IntegerResponse, error) {
 	var res IntegerResponse
-	return &res, c.Do(ctx, req, &res)
+	return &res, do.Do(ctx, req, &res)
 }

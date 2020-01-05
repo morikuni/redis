@@ -22,20 +22,20 @@ func TestE2E(t *testing.T) {
 
 	ctx := context.Background()
 
-	sres, err := client.Set(ctx, &SetRequest{
+	sres, err := Set(ctx, client, &SetRequest{
 		Key:   "aaa",
 		Value: "123",
 	})
 	require.WantError(t, false, err)
 	assert.Equal(t, "OK", sres.value)
 
-	ires, err := client.Incr(ctx, &IncrRequest{
+	ires, err := Incr(ctx, client, &IncrRequest{
 		Key: "aaa",
 	})
 	require.WantError(t, false, err)
 	assert.Equal(t, int64(124), ires.value)
 
-	sres, err = client.Get(ctx, &GetRequest{
+	sres, err = Get(ctx, client, &GetRequest{
 		Key: "aaa",
 	})
 	require.WantError(t, false, err)
