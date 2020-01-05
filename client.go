@@ -106,7 +106,7 @@ func (req *SetRequest) ToData() (Data, error) {
 	}
 
 	if req.Expire > 0 {
-		d = append(d, BulkString("PX"), Integer(req.Expire.Milliseconds()))
+		d = append(d, BulkString("PX"), Integer(req.Expire)/Integer(time.Millisecond))
 	}
 
 	switch {
