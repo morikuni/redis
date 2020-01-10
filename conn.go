@@ -59,8 +59,6 @@ func newConn(nconn net.Conn) Conn {
 // requires closing connection. It makes conn to create new connection and
 // it will cause TCP hand shake. Since Redis should be fast enough
 func (c *conn) Send(ctx context.Context, data Data) error {
-	c.w.Reset(c.conn)
-
 	if err := ctx.Err(); err != nil {
 		return newConnError(err, true)
 	}
@@ -153,8 +151,6 @@ func (c *conn) send(ctx context.Context, data Data) error {
 }
 
 func (c *conn) Receive(ctx context.Context) (Data, error) {
-	c.r.Reset(c.conn)
-
 	if dl, ok := ctx.Deadline(); ok {
 		err := c.conn.SetReadDeadline(dl)
 		if err != nil {
@@ -254,12 +250,18 @@ func (c *conn) Close(context.Context) error {
 }
 
 func canReuse(err error) bool {
-	te, ok := err.(interface{ CanReuse() bool })
-	if ok {
-		return te.CanReuse()
+	if err == nil {
+		return true
 	}
 
-	return false
+	ce, ok := err.(*ConnError)
+	if ok {
+		return ce.CanReuse()
+	}
+
+	// Basically, errors are application error unless ConnError.
+	// Therefore connection can be reused.
+	return true
 }
 
 func isTemporary(err error) bool {

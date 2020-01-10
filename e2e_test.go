@@ -9,7 +9,7 @@ import (
 	"github.com/morikuni/redis/internal/require"
 )
 
-func TestE2E(t *testing.T) {
+func TestE2E_Client(t *testing.T) {
 	addr := os.Getenv("REDIS_ADDR")
 	if addr == "" {
 		t.Skip("REDIS_ADDR is empty")
@@ -40,6 +40,64 @@ func TestE2E(t *testing.T) {
 	})
 	require.WantError(t, false, err)
 	assert.Equal(t, "124", sres.value)
+}
+
+func TestE2E_Pipeline(t *testing.T) {
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		t.Skip("REDIS_ADDR is empty")
+	}
+
+	pool, err := NewPool(addr)
+	require.WantError(t, false, err)
+
+	client := NewClient(pool)
+
+	ctx := context.Background()
+	pipe, err := client.Pipeline(ctx)
+	require.WantError(t, false, err)
+	defer func() {
+		assert.WantError(t, false, pipe.Close(ctx))
+	}()
+
+	err = pipe.Send(ctx, &SetRequest{
+		Key:   "aaa",
+		Value: "123",
+	})
+	require.WantError(t, false, err)
+
+	err = pipe.Send(ctx, &IncrRequest{
+		Key: "aaa",
+	})
+	require.WantError(t, false, err)
+
+	err = pipe.Send(ctx, &GetRequest{
+		Key: "aaa",
+	})
+	require.WantError(t, false, err)
+
+	var res1 StringResponse
+	err = pipe.Receive(ctx, &res1)
+	require.WantError(t, false, err)
+	assert.Equal(t, "OK", res1.String())
+
+	var res2 IntegerResponse
+	err = pipe.Receive(ctx, &res2)
+	require.WantError(t, false, err)
+	assert.Equal(t, "124", res2.String())
+
+	var res3 StringResponse
+	err = pipe.Receive(ctx, &res3)
+	require.WantError(t, false, err)
+	assert.Equal(t, "124", res3.String())
+
+	sres, err := Set(ctx, client, &SetRequest{
+		Key:      "aaa",
+		Value:    "123",
+		NotExist: true,
+	})
+	require.WantError(t, false, err)
+	assert.Equal(t, "", sres.value)
 }
 
 func run(b *testing.B, pool *Pool, send, receive bool) {
@@ -102,7 +160,7 @@ func noIdle(tb testing.TB) *Pool {
 	return pool
 }
 
-func BenchmarkE2E(b *testing.B) {
+func BenchmarkPool(b *testing.B) {
 	cases := map[string]struct {
 		connFunc func(testing.TB) *Pool
 		send     bool
