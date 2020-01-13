@@ -9,6 +9,12 @@ type Doer interface {
 	Do(ctx context.Context, req Request, res Response) error
 }
 
+type doFunc func(ctx context.Context, req Request, res Response) error
+
+func (f doFunc) Do(ctx context.Context, req Request, res Response) error {
+	return f(ctx, req, res)
+}
+
 type GetRequest struct {
 	Key string
 }

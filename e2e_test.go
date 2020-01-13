@@ -60,44 +60,24 @@ func TestE2E_Pipeline(t *testing.T) {
 		assert.WantError(t, false, pipe.Close(ctx))
 	}()
 
-	err = pipe.Send(ctx, &SetRequest{
+	sres, err := Set(ctx, pipe, &SetRequest{
 		Key:   "aaa",
 		Value: "123",
 	})
 	require.WantError(t, false, err)
+	assert.Equal(t, "OK", sres.value)
 
-	err = pipe.Send(ctx, &IncrRequest{
+	ires, err := Incr(ctx, pipe, &IncrRequest{
 		Key: "aaa",
 	})
 	require.WantError(t, false, err)
+	assert.Equal(t, int64(124), ires.value)
 
-	err = pipe.Send(ctx, &GetRequest{
+	sres, err = Get(ctx, pipe, &GetRequest{
 		Key: "aaa",
 	})
 	require.WantError(t, false, err)
-
-	var res1 StringResponse
-	err = pipe.Receive(ctx, &res1)
-	require.WantError(t, false, err)
-	assert.Equal(t, "OK", res1.String())
-
-	var res2 IntegerResponse
-	err = pipe.Receive(ctx, &res2)
-	require.WantError(t, false, err)
-	assert.Equal(t, "124", res2.String())
-
-	var res3 StringResponse
-	err = pipe.Receive(ctx, &res3)
-	require.WantError(t, false, err)
-	assert.Equal(t, "124", res3.String())
-
-	sres, err := Set(ctx, client, &SetRequest{
-		Key:      "aaa",
-		Value:    "123",
-		NotExist: true,
-	})
-	require.WantError(t, false, err)
-	assert.Equal(t, "", sres.value)
+	assert.Equal(t, "124", sres.value)
 }
 
 func run(b *testing.B, pool *Pool, send, receive bool) {

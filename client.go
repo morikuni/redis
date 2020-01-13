@@ -57,9 +57,11 @@ type Pipeline struct {
 	conn     Conn
 	pool     *Pool
 	canReuse bool
+
+	pendingResponses []Response
 }
 
-func (p *Pipeline) Send(ctx context.Context, req Request) error {
+func (p *Pipeline) send(ctx context.Context, req Request) error {
 	d, err := req.ToData()
 	if err != nil {
 		return err
@@ -74,7 +76,7 @@ func (p *Pipeline) Send(ctx context.Context, req Request) error {
 	return nil
 }
 
-func (p *Pipeline) Receive(ctx context.Context, res Response) error {
+func (p *Pipeline) receive(ctx context.Context, res Response) error {
 	d, err := p.conn.Receive(ctx)
 	if err != nil {
 		p.canReuse = canReuse(err)
@@ -85,12 +87,43 @@ func (p *Pipeline) Receive(ctx context.Context, res Response) error {
 }
 
 func (p *Pipeline) Do(ctx context.Context, req Request, res Response) error {
-	err := p.Send(ctx, req)
+	err := p.send(ctx, req)
 	if err != nil {
 		return err
 	}
 
-	return p.Receive(ctx, res)
+	return p.receive(ctx, res)
+}
+
+func (p *Pipeline) Async() Doer {
+	return doFunc(func(ctx context.Context, req Request, res Response) error {
+		err := p.send(ctx, req)
+		if err != nil {
+			return err
+		}
+
+		p.pendingResponses = append(p.pendingResponses, res)
+		return nil
+	})
+}
+
+func (p *Pipeline) Await(ctx context.Context) error {
+	var resErr error
+	for _, res := range p.pendingResponses {
+		err := p.receive(ctx, res)
+		if err != nil {
+			if _, ok := err.(*ConnError); !ok {
+				return err
+			}
+			// continue if ConnError because it maybe a problem of res.FromData.
+			// unless conn error, the connection can be reused.
+			resErr = err
+		}
+	}
+
+	p.pendingResponses = p.pendingResponses[:0]
+
+	return resErr
 }
 
 func (p *Pipeline) Close(ctx context.Context) error {
