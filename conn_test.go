@@ -155,6 +155,9 @@ func TestConn(t *testing.T) {
 
 			err := conn.Send(context.Background(), tc.data)
 			assert.WantError(t, tc.wantErrSend, err)
+
+			err = conn.Flush(context.Background())
+			assert.WantError(t, false, err)
 			if !tc.wantErrSend {
 				assert.Equal(t, tc.text, buf.String())
 			}

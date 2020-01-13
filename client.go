@@ -92,6 +92,11 @@ func (p *Pipeline) Do(ctx context.Context, req Request, res Response) error {
 		return err
 	}
 
+	err = p.conn.Flush(ctx)
+	if err != nil {
+		return err
+	}
+
 	return p.receive(ctx, res)
 }
 
@@ -108,6 +113,11 @@ func (p *Pipeline) Async() Doer {
 }
 
 func (p *Pipeline) Await(ctx context.Context) error {
+	err := p.conn.Flush(ctx)
+	if err != nil {
+		return err
+	}
+
 	var resErr error
 	for _, res := range p.pendingResponses {
 		err := p.receive(ctx, res)

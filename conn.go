@@ -36,6 +36,7 @@ func (e *ConnError) CanReuse() bool {
 // Conn represents a connection to a redis server.
 type Conn interface {
 	Send(ctx context.Context, data Data) error
+	Flush(ctx context.Context) error
 	Receive(ctx context.Context) (Data, error)
 	Close(ctx context.Context) error
 }
@@ -79,7 +80,11 @@ func (c *conn) Send(ctx context.Context, data Data) error {
 		return newConnError(err, false)
 	}
 
-	err = c.w.Flush()
+	return nil
+}
+
+func (c *conn) Flush(ctx context.Context) error {
+	err := c.w.Flush()
 	if err != nil {
 		if isTimeout(err) && ctx.Err() == context.DeadlineExceeded {
 			return newConnError(context.DeadlineExceeded, false)
