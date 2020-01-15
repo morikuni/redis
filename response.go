@@ -62,3 +62,16 @@ func (res *IntegerResponse) FromData(data Data) error {
 
 	return nil
 }
+
+const Discard = discardResponse(0)
+
+type discardResponse int
+
+func (discardResponse) FromData(data Data) error {
+	switch t := data.(type) {
+	case Error:
+		return t
+	default:
+		return nil
+	}
+}

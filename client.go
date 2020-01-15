@@ -46,9 +46,5 @@ func (c *Client) Pipeline(ctx context.Context) (*Pipeline, error) {
 		return nil, err
 	}
 
-	return &Pipeline{
-		conn:     conn,
-		pool:     c.pool,
-		canReuse: true,
-	}, nil
+	return newPipeline(conn, c.pool), nil
 }

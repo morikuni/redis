@@ -125,6 +125,54 @@ func TestE2E_Pipeline_Async(t *testing.T) {
 	assert.Equal(t, "124", res3.value)
 }
 
+func TestE2E_Transaction(t *testing.T) {
+	addr := os.Getenv("REDIS_ADDR")
+	if addr == "" {
+		t.Skip("REDIS_ADDR is empty")
+	}
+
+	pool, err := NewPool(addr)
+	require.WantError(t, false, err)
+
+	client := NewClient(pool)
+
+	ctx := context.Background()
+	pipe, err := client.Pipeline(ctx)
+	require.WantError(t, false, err)
+	defer func() {
+		assert.WantError(t, false, pipe.Close(ctx))
+	}()
+
+	tx, err := pipe.Multi(ctx)
+	require.WantError(t, false, err)
+
+	res1, err := Set(ctx, tx, &SetRequest{
+		Key:   "aaa",
+		Value: "123",
+	})
+	require.WantError(t, false, err)
+	assert.Equal(t, "", res1.value)
+
+	res2, err := Incr(ctx, tx, &IncrRequest{
+		Key: "aaa",
+	})
+	require.WantError(t, false, err)
+	assert.Equal(t, int64(0), res2.value)
+
+	res3, err := Get(ctx, tx, &GetRequest{
+		Key: "aaa",
+	})
+	require.WantError(t, false, err)
+	assert.Equal(t, "", res3.value)
+
+	err = tx.Exec(ctx)
+	require.WantError(t, false, err)
+
+	assert.Equal(t, "OK", res1.value)
+	assert.Equal(t, int64(124), res2.value)
+	assert.Equal(t, "124", res3.value)
+}
+
 func run(b *testing.B, pool *Pool, send, receive bool) {
 	ctx := context.Background()
 
